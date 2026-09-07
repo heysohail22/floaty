@@ -140,8 +140,24 @@ vite.config.ts.timestamp-*
 
 node_modules
 .DS_Store
+Thumbs.db
 *.log
 out
+dist/
 pnpm-lock.yaml
 pnpm-workspace.yaml
+
+# Electron Builder artifacts
+*.AppImage
+*.deb
+*.rpm
+*.exe
+*.dmg
+*.blockmap
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*~
 
