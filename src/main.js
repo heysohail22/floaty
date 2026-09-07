@@ -18,9 +18,18 @@ if (process.platform === 'linux') {
       const { exec } = require('child_process');
       const home = os.homedir();
       const appDir = path.resolve(__dirname, '..');
-      const desktopFile = path.join(home, '.local/share/applications/floaty.desktop');
+      const desktopFile = path.join(home, '.local/share/applications/com.sohail.floaty.desktop');
+      const legacyDesktopFile = path.join(home, '.local/share/applications/floaty.desktop');
       const iconFile = path.join(home, '.local/share/icons/hicolor/512x512/apps/floaty.png');
       const srcIcon = path.join(appDir, 'assets/icon.png');
+
+      if (fs.existsSync(legacyDesktopFile)) {
+        try {
+          fs.unlinkSync(legacyDesktopFile);
+        } catch (_err) {
+          // ignore
+        }
+      }
 
       if (fs.existsSync(srcIcon)) {
         if (!fs.existsSync(iconFile)) {
