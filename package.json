@@ -142,7 +142,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "publisherName": "Akshyganesh",
+      "publisherName": "Sohail",
       "verifyUpdateCodeSignature": false
     },
     "nsis": {
@@ -150,7 +150,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Floating Cam"
+      "shortcutName": "Floaty"
     },
     "linux": {
       "target": [
@@ -179,8 +179,8 @@
       "icon": "build/icons/",
       "category": "AudioVideo",
       "desktop": {
-        "Name": "Floating Cam",
-        "Comment": "Floating camera window",
+        "Name": "Floaty",
+        "Comment": "Cross-platform floating camera",
         "Categories": "AudioVideo;Photography;",
         "Keywords": "camera;webcam;floating;video;"
       }
