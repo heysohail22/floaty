@@ -1,4 +1,4 @@
-const { BrowserWindow, app } = require('electron');
+const { BrowserWindow, app, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -16,7 +16,7 @@ function getWindowShapeRects(width, height, isCircle, radiusVal = 16) {
   }
 
   radius = Math.min(radius, Math.floor(width / 2), Math.floor(height / 2));
-  if (radius <= 0) return [];
+  if (radius <= 0) return [{ x: 0, y: 0, width, height }];
 
   const rects = [];
   for (let y = 0; y < height; y++) {
@@ -100,9 +100,10 @@ class WindowManager {
     this.radius = savedState?.radius !== undefined ? savedState.radius : 16;
 
     const iconPath = path.join(__dirname, '../../assets/icon.png');
+    const appIcon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : null;
 
     this.window = new BrowserWindow({
-      icon: iconPath,
+      icon: appIcon || iconPath,
       width: initialWidth,
       height: initialHeight,
       minWidth: 160,
@@ -132,6 +133,10 @@ class WindowManager {
 
     // Enhanced window properties for floating behavior
     this.setAlwaysOnTop(true);
+
+    if (process.platform === 'linux' && appIcon && !appIcon.isEmpty()) {
+      this.window.setIcon(appIcon);
+    }
 
     // Hide dock icon on macOS for cleaner experience
     if (process.platform === 'darwin') {
@@ -236,8 +241,8 @@ class WindowManager {
       this.window.setAlwaysOnTop(shouldBeOnTop, 'screen-saver');
       this.window.setVisibleOnAllWorkspaces(shouldBeOnTop, { visibleOnFullScreen: true });
     } else {
-      // On Linux/Windows, 'floating' or normal always-on-top
-      this.window.setAlwaysOnTop(shouldBeOnTop, 'floating');
+      // On Linux/Windows, standard always-on-top without macOS-specific level string
+      this.window.setAlwaysOnTop(shouldBeOnTop);
       this.window.setVisibleOnAllWorkspaces(shouldBeOnTop);
     }
   }
@@ -254,9 +259,10 @@ class WindowManager {
     }
 
     const iconPath = path.join(__dirname, '../../assets/icon.png');
+    const appIcon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : null;
 
     this.preferencesWindow = new BrowserWindow({
-      icon: iconPath,
+      icon: appIcon || iconPath,
       width: 500,
       height: 560,
       minWidth: 440,

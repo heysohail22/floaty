@@ -15,6 +15,7 @@ if (process.platform === 'linux') {
       const os = require('os');
       const path = require('path');
       const fs = require('fs');
+      const { exec } = require('child_process');
       const home = os.homedir();
       const appDir = path.resolve(__dirname, '..');
       const desktopFile = path.join(home, '.local/share/applications/floaty.desktop');
@@ -28,10 +29,20 @@ if (process.platform === 'linux') {
         }
       }
 
-      if (!fs.existsSync(desktopFile)) {
-        fs.mkdirSync(path.dirname(desktopFile), { recursive: true });
-        const entry = `[Desktop Entry]\nName=Floaty\nComment=Floating Camera\nExec=${process.execPath} ${appDir} --no-sandbox --enable-transparent-visuals --disable-gpu\nIcon=floaty\nTerminal=false\nType=Application\nStartupWMClass=floaty\nCategories=AudioVideo;\n`;
+      fs.mkdirSync(path.dirname(desktopFile), { recursive: true });
+      const entry = `[Desktop Entry]\nName=Floaty\nComment=Floating Camera\nExec=${process.execPath} ${appDir} --no-sandbox --enable-transparent-visuals --disable-gpu\nIcon=${srcIcon}\nTerminal=false\nType=Application\nStartupWMClass=floaty\nCategories=AudioVideo;\n`;
+
+      let needsWrite = true;
+      if (fs.existsSync(desktopFile)) {
+        const existing = fs.readFileSync(desktopFile, 'utf8');
+        if (existing === entry) {
+          needsWrite = false;
+        }
+      }
+      if (needsWrite) {
         fs.writeFileSync(desktopFile, entry, 'utf8');
+        exec('update-desktop-database ~/.local/share/applications 2>/dev/null');
+        exec('gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor 2>/dev/null');
       }
     } catch {
       // Ignore shortcut setup errors
