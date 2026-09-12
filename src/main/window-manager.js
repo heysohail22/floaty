@@ -112,9 +112,12 @@ class WindowManager {
       const statePath = this.getWindowStatePath();
       if (statePath && this.window && !this.window.isDestroyed()) {
         const [w, h] = this.window.getSize();
+        const [x, y] = this.window.getPosition();
         const data = {
           width: Math.max(160, Math.min(600, w)),
           height: Math.max(160, Math.min(600, h)),
+          x,
+          y,
           isCircle: Boolean(this.isCircle),
           radius: Number(this.radius) || 16
         };
@@ -139,12 +142,14 @@ class WindowManager {
     this.radius =
       savedSettings.radius !== undefined
         ? Number(savedSettings.radius)
-        : (savedState?.radius !== undefined ? Number(savedState.radius) : 16);
+        : savedState?.radius !== undefined
+          ? Number(savedState.radius)
+          : 16;
 
     const iconPath = path.join(__dirname, '../../assets/icon.png');
     const appIcon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : null;
 
-    this.window = new BrowserWindow({
+    const winConfig = {
       icon: appIcon || iconPath,
       width: initialWidth,
       height: initialHeight,
@@ -171,10 +176,25 @@ class WindowManager {
         enableRemoteModule: false,
         webSecurity: true
       }
-    });
+    };
+
+    if (
+      savedState &&
+      typeof savedState.x === 'number' &&
+      typeof savedState.y === 'number' &&
+      !isNaN(savedState.x) &&
+      !isNaN(savedState.y)
+    ) {
+      winConfig.x = savedState.x;
+      winConfig.y = savedState.y;
+    }
+
+    this.window = new BrowserWindow(winConfig);
 
     // Enhanced window properties for floating behavior
-    this.setAlwaysOnTop(true);
+    const alwaysOnTop =
+      savedSettings.alwaysOnTop !== undefined ? Boolean(savedSettings.alwaysOnTop) : true;
+    this.setAlwaysOnTop(alwaysOnTop);
 
     if (process.platform === 'linux' && appIcon && !appIcon.isEmpty()) {
       this.window.setIcon(appIcon);
@@ -221,6 +241,10 @@ class WindowManager {
 
     this.window.on('resize', () => {
       this.applyWindowShape();
+      this.saveWindowState();
+    });
+
+    this.window.on('moved', () => {
       this.saveWindowState();
     });
 

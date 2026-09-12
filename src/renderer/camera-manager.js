@@ -178,6 +178,16 @@ class CameraManager {
     }
   }
 
+  setFlipped(flipped) {
+    this.isFlipped = Boolean(flipped);
+    this.applyFlip();
+    window.dispatchEvent(
+      new CustomEvent('camera-flipped', {
+        detail: { isFlipped: this.isFlipped }
+      })
+    );
+  }
+
   toggleFlip() {
     this.isFlipped = !this.isFlipped;
     this.applyFlip();

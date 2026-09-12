@@ -26,10 +26,13 @@ class UIController {
         if (typeof shape.radius === 'number') {
           this.state.borderRadius = shape.radius;
         }
-        if (shape.isCircle) {
-          await this.setCircle(true, false);
-          return;
+        this.state.isCircle = Boolean(shape.isCircle);
+        document.body.classList.toggle('circle', this.state.isCircle);
+        this.updateCircleButton();
+        if (!this.state.isCircle) {
+          this.updateBorderRadius(this.state.borderRadius, false);
         }
+        return;
       }
     } catch (e) {
       console.warn('Could not load initial shape:', e);
@@ -258,6 +261,32 @@ class UIController {
       }
     });
 
+    // Listen for IPC setting sync from Preferences or other windows
+    window.floatingCam?.onSettingSynced?.(data => {
+      if (!data) return;
+      if (data.key === 'shape' && data.value) {
+        if (
+          typeof data.value.isCircle === 'boolean' &&
+          data.value.isCircle !== this.state.isCircle
+        ) {
+          this.setCircle(data.value.isCircle, false);
+        }
+        if (typeof data.value.radius === 'number') {
+          this.updateBorderRadius(data.value.radius, false);
+        }
+      } else if (data.key === 'radius') {
+        this.updateBorderRadius(Number(data.value), false);
+      } else if (data.key === 'opacity') {
+        this.setOpacity(data.value);
+      } else if (data.key === 'alwaysOnTop') {
+        this.updateAlwaysOnTopUI(Boolean(data.value));
+      } else if (data.key === 'flip') {
+        window.cameraManager?.setFlipped(data.value);
+      } else if (data.key === 'camera-device') {
+        window.cameraManager?.switchCamera(data.value);
+      }
+    });
+
     // Listen for IPC events from main process (e.g. global shortcuts)
     window.addEventListener('message', event => {
       if (event.data.type === 'show-controls') {
@@ -278,37 +307,37 @@ class UIController {
       if (e.target.tagName === 'INPUT') return;
 
       switch (e.key) {
-        case 'Escape':
-          this.hideControls();
-          break;
-        case ' ':
-          e.preventDefault();
-          window.floatingCam?.openPreferences?.();
-          break;
-        case 'f':
-        case 'F':
-          window.cameraManager?.toggleFlip();
-          break;
-        case 'c':
-        case 'C':
-          this.toggleCircle();
-          break;
-        case 'o':
-        case 'O':
-          this.cycleOpacity();
-          break;
-        case 's':
-        case 'S':
-          this.toggleSizePanel();
-          break;
-        case 'h':
-        case 'H':
-          this.toggleToolbarVisibility();
-          break;
-        case 'p':
-        case 'P':
-          this.toggleAlwaysOnTop();
-          break;
+      case 'Escape':
+        this.hideControls();
+        break;
+      case ' ':
+        e.preventDefault();
+        window.floatingCam?.openPreferences?.();
+        break;
+      case 'f':
+      case 'F':
+        window.cameraManager?.toggleFlip();
+        break;
+      case 'c':
+      case 'C':
+        this.toggleCircle();
+        break;
+      case 'o':
+      case 'O':
+        this.cycleOpacity();
+        break;
+      case 's':
+      case 'S':
+        this.toggleSizePanel();
+        break;
+      case 'h':
+      case 'H':
+        this.toggleToolbarVisibility();
+        break;
+      case 'p':
+      case 'P':
+        this.toggleAlwaysOnTop();
+        break;
       }
     });
   }
@@ -366,11 +395,8 @@ class UIController {
       let rectH =
         this.savedRectSize?.height || window.settingsManager?.get('window.rectHeight') || 240;
 
-      // Guard against legacy corrupted 500 values
-      if (rectW >= 480 && rectH >= 480) {
-        rectW = 240;
-        rectH = 240;
-      }
+      rectW = Math.min(Math.max(rectW, 160), 600);
+      rectH = Math.min(Math.max(rectH, 160), 600);
 
       await window.floatingCam?.setWindowSize(rectW, rectH);
       this.updateBorderRadius(this.state.borderRadius, false);
@@ -379,6 +405,10 @@ class UIController {
     this.updateCircleButton();
     window.floatingCam?.updateShape?.(this.state.isCircle, this.state.borderRadius);
     window.floatingCam?.syncSetting?.('shape', {
+      isCircle: this.state.isCircle,
+      radius: this.state.borderRadius
+    });
+    window.floatingCam?.saveSettings?.({
       isCircle: this.state.isCircle,
       radius: this.state.borderRadius
     });
@@ -441,6 +471,7 @@ class UIController {
       if (broadcast) {
         window.floatingCam?.syncSetting?.('radius', val);
       }
+      window.floatingCam?.saveSettings?.({ radius: val });
       if (window.settingsManager) {
         window.settingsManager.update({
           'window.borderRadius': val
@@ -577,10 +608,35 @@ class UIController {
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', async () => {
       if (resizing) {
         resizing = false;
         document.body.classList.remove('resizing');
+        try {
+          const size = await window.floatingCam?.getWindowSize();
+          if (size) {
+            const updates = { 'window.width': size.width, 'window.height': size.height };
+            if (!this.state.isCircle) {
+              updates['window.rectWidth'] = size.width;
+              updates['window.rectHeight'] = size.height;
+              this.savedRectSize = { width: size.width, height: size.height };
+            }
+            window.settingsManager?.update(updates);
+            window.floatingCam?.saveSettings?.(
+              this.state.isCircle
+                ? { width: size.width, height: size.height, isCircle: true }
+                : {
+                  width: size.width,
+                  height: size.height,
+                  rectWidth: size.width,
+                  rectHeight: size.height,
+                  isCircle: false
+                }
+            );
+          }
+        } catch (err) {
+          console.warn('Could not save resized size:', err);
+        }
       }
     });
 

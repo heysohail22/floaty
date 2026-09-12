@@ -147,6 +147,12 @@ class IPCHandlers {
       } else if (key === 'alwaysOnTop') {
         this.windowManager.setAlwaysOnTop(Boolean(value));
         this.windowManager.saveSettings({ alwaysOnTop: Boolean(value) });
+      } else if (key === 'flip') {
+        this.windowManager.saveSettings({ isFlipped: Boolean(value) });
+      } else if (key === 'camera-device') {
+        this.windowManager.saveSettings({ deviceId: value });
+      } else if (key === 'opacity') {
+        this.windowManager.saveSettings({ opacity: Number(value) });
       } else if (key) {
         this.windowManager.saveSettings({ [key]: value });
       }
@@ -177,10 +183,27 @@ class IPCHandlers {
     // Settings handlers
     ipcMain.handle('get-settings', () => {
       const saved = this.windowManager.loadSettings();
+      const state = this.windowManager.loadWindowState();
+      const window = this.windowManager.getWindow();
+      let width = saved?.width || state?.width || 240;
+      let height = saved?.height || state?.height || 240;
+      if (window && !window.isDestroyed()) {
+        const [curW, curH] = window.getSize();
+        width = curW;
+        height = curH;
+      }
       return {
         ...saved,
+        width,
+        height,
         isCircle: Boolean(this.windowManager.isCircle),
-        radius: this.windowManager.radius !== undefined ? this.windowManager.radius : 16
+        radius: this.windowManager.radius !== undefined ? this.windowManager.radius : 16,
+        alwaysOnTop:
+          window && !window.isDestroyed()
+            ? window.isAlwaysOnTop()
+            : saved.alwaysOnTop !== undefined
+              ? Boolean(saved.alwaysOnTop)
+              : true
       };
     });
 
@@ -188,6 +211,9 @@ class IPCHandlers {
       if (settings && typeof settings === 'object') {
         if (typeof settings.isCircle === 'boolean' || settings.radius !== undefined) {
           this.windowManager.setShape(settings.isCircle, settings.radius);
+        }
+        if (typeof settings.alwaysOnTop === 'boolean') {
+          this.windowManager.setAlwaysOnTop(settings.alwaysOnTop);
         }
         if (settings.width && settings.height) {
           const w = Math.max(160, Math.min(600, parseInt(settings.width, 10)));

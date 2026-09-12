@@ -58,7 +58,10 @@
         "floatingCam": "readonly",
         "electronAPI": "readonly",
         "systemInfo": "readonly",
-        "devTools": "readonly"
+        "devTools": "readonly",
+        "SettingsManager": "readonly",
+        "UIController": "readonly",
+        "CameraManager": "readonly"
       }
     },
     {

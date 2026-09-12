@@ -74,6 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (deviceId) {
       localStorage.setItem('floaty_camera_id', deviceId);
       window.floatingCam?.syncSetting('camera-device', deviceId);
+      window.floatingCam?.saveSettings?.({ deviceId });
     }
   });
 
@@ -89,6 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isFlipped = e.target.checked;
     localStorage.setItem('floaty_flip', isFlipped);
     window.floatingCam?.syncSetting('flip', isFlipped);
+    window.floatingCam?.saveSettings?.({ isFlipped });
   });
 
   // Aspect Ratio & Sizes
@@ -102,6 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function saveSize(w, h) {
     localStorage.setItem('floaty_width', w);
     localStorage.setItem('floaty_height', h);
+    window.floatingCam?.saveSettings?.({ width: w, height: h });
     try {
       const raw = localStorage.getItem('floating-cam-settings');
       const parsed = raw ? JSON.parse(raw) : {};
@@ -119,13 +122,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function syncCurrentSizeInputs() {
     try {
       const size = await window.floatingCam?.getWindowSize();
-      let w = size?.width;
-      let h = size?.height;
+      const settings = await window.floatingCam?.getSettings?.();
+      let w = size?.width || settings?.width;
+      let h = size?.height || settings?.height;
 
-      if (!w || !h || (w >= 480 && h >= 480)) {
+      if (!w || !h) {
         const savedW = parseInt(localStorage.getItem('floaty_width'), 10);
         const savedH = parseInt(localStorage.getItem('floaty_height'), 10);
-        if (savedW && savedH && savedW < 480 && savedH < 480) {
+        if (savedW && savedH) {
           w = savedW;
           h = savedH;
         } else {
@@ -164,6 +168,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         await window.floatingCam?.setWindowSize(preset.w, preset.h);
         window.floatingCam?.syncSetting('size', { width: preset.w, height: preset.h });
+        window.floatingCam?.saveSettings?.({ width: preset.w, height: preset.h });
       }
     });
   });
@@ -178,6 +183,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await window.floatingCam?.setWindowSize(w, h);
     window.floatingCam?.syncSetting('size', { width: w, height: h });
+    window.floatingCam?.saveSettings?.({ width: w, height: h });
   });
 
   // Shape Mode (Circle vs Rect)
@@ -204,6 +210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateShapeUI(true);
     localStorage.setItem('floaty_shape', 'circle');
     window.floatingCam?.syncSetting('shape', { isCircle: true });
+    window.floatingCam?.saveSettings?.({ isCircle: true });
   });
 
   shapeRectBtn?.addEventListener('click', () => {
@@ -211,10 +218,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem('floaty_shape', 'rect');
     const radius = parseInt(radiusSlider.value, 10) || 16;
     window.floatingCam?.syncSetting('shape', { isCircle: false, radius });
+    window.floatingCam?.saveSettings?.({ isCircle: false, radius });
   });
 
   function saveRadius(val) {
     localStorage.setItem('floaty_radius', val);
+    window.floatingCam?.saveSettings?.({ radius: val });
     try {
       const raw = localStorage.getItem('floating-cam-settings');
       const parsed = raw ? JSON.parse(raw) : {};
@@ -237,6 +246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveRadius(val);
     if (!isCircleMode) {
       window.floatingCam?.syncSetting('radius', val);
+      window.floatingCam?.saveSettings?.({ radius: val });
     }
   });
 
@@ -250,6 +260,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     opacityBadge.textContent = `${val}%`;
     localStorage.setItem('floaty_opacity', val);
     window.floatingCam?.syncSetting('opacity', val / 100);
+    window.floatingCam?.saveSettings?.({ opacity: val / 100 });
   });
 
   // Always on Top
@@ -267,6 +278,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await window.floatingCam?.setAlwaysOnTop(checked);
     localStorage.setItem('floaty_always_on_top', checked);
     window.floatingCam?.syncSetting('alwaysOnTop', checked);
+    window.floatingCam?.saveSettings?.({ alwaysOnTop: checked });
   });
 
   // Auto-hide toolbar switch
@@ -296,6 +308,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (key === 'shape') {
       updateShapeUI(Boolean(value.isCircle));
+      if (typeof value.radius === 'number') {
+        radiusSlider.value = value.radius;
+        radiusBadge.textContent = `${value.radius}%`;
+      }
     } else if (key === 'radius') {
       radiusSlider.value = value;
       radiusBadge.textContent = `${value}%`;
@@ -320,14 +336,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function syncCurrentShape() {
     try {
       const shape = await window.floatingCam?.getShape?.();
-      if (shape) {
-        if (typeof shape.radius === 'number') {
-          radiusSlider.value = shape.radius;
-          radiusBadge.textContent = `${shape.radius}%`;
-          saveRadius(shape.radius);
-        }
-        updateShapeUI(Boolean(shape.isCircle));
-      }
+      const settings = await window.floatingCam?.getSettings?.();
+      const isCircle =
+        shape?.isCircle !== undefined ? Boolean(shape.isCircle) : Boolean(settings?.isCircle);
+      updateShapeUI(isCircle);
+
+      const radius =
+        typeof shape?.radius === 'number'
+          ? shape.radius
+          : typeof settings?.radius === 'number'
+            ? settings.radius
+            : 16;
+      radiusSlider.value = radius;
+      radiusBadge.textContent = `${radius}%`;
+      saveRadius(radius);
     } catch (e) {
       console.warn('Could not sync current shape in preferences:', e);
     }
@@ -472,10 +494,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         card.innerHTML = `
           <div class="source-thumb-wrapper">
             ${
-              source.thumbnail
-                ? `<img src="${source.thumbnail}" class="source-thumb" alt="${source.name}">`
-                : `<div class="source-thumb-fallback">${fallbackSvg}<span>${isScreenSource ? 'Monitor Display' : 'App Window'}</span></div>`
-            }
+  source.thumbnail
+    ? `<img src="${source.thumbnail}" class="source-thumb" alt="${source.name}">`
+    : `<div class="source-thumb-fallback">${fallbackSvg}<span>${isScreenSource ? 'Monitor Display' : 'App Window'}</span></div>`
+}
           </div>
           <div class="source-check-badge">✓</div>
           <div class="source-info">

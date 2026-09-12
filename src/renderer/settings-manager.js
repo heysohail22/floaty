@@ -60,35 +60,76 @@ class SettingsManager {
     };
   }
 
+  async load() {
+    this.loadSettings();
+    try {
+      if (window.floatingCam?.getSettings) {
+        const mainSettings = await window.floatingCam.getSettings();
+        if (mainSettings && typeof mainSettings === 'object') {
+          if (mainSettings.width && mainSettings.height) {
+            this.settings.window.width = mainSettings.width;
+            this.settings.window.height = mainSettings.height;
+            if (!mainSettings.isCircle) {
+              this.settings.window.rectWidth = mainSettings.width;
+              this.settings.window.rectHeight = mainSettings.height;
+            }
+          }
+          if (mainSettings.rectWidth && mainSettings.rectHeight) {
+            this.settings.window.rectWidth = mainSettings.rectWidth;
+            this.settings.window.rectHeight = mainSettings.rectHeight;
+          }
+          if (typeof mainSettings.isCircle === 'boolean') {
+            this.settings.camera.isCircle = mainSettings.isCircle;
+          }
+          if (mainSettings.radius !== undefined) {
+            this.settings.window.borderRadius = Number(mainSettings.radius);
+          }
+          if (typeof mainSettings.alwaysOnTop === 'boolean') {
+            this.settings.window.alwaysOnTop = mainSettings.alwaysOnTop;
+          }
+          if (typeof mainSettings.isFlipped === 'boolean') {
+            this.settings.camera.isFlipped = mainSettings.isFlipped;
+          }
+          if (mainSettings.deviceId) {
+            this.settings.camera.deviceId = mainSettings.deviceId;
+          }
+          if (typeof mainSettings.opacity === 'number') {
+            this.settings.window.opacity = mainSettings.opacity;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load main process settings:', e);
+    }
+    this.emit('settings-loaded', this.settings);
+    return this.settings;
+  }
+
   loadSettings() {
     try {
       const stored = localStorage.getItem(this.storageKey);
       if (stored) {
         const parsedSettings = JSON.parse(stored);
         this.settings = this.mergeSettings(this.getDefaultSettings(), parsedSettings);
-        // Sanitize window dimensions to prevent oversized window
+        // Sanitize window dimensions to prevent invalid dimensions
         if (this.settings.window) {
-          // If legacy 500x500 got saved, reset to sane 240x240
-          if (this.settings.window.width >= 480 && this.settings.window.height >= 480) {
-            this.settings.window.width = 240;
-            this.settings.window.height = 240;
+          if (this.settings.window.width) {
+            this.settings.window.width = Math.min(Math.max(this.settings.window.width, 160), 600);
           }
-          if (this.settings.window.rectWidth >= 480 && this.settings.window.rectHeight >= 480) {
-            this.settings.window.rectWidth = 320;
-            this.settings.window.rectHeight = 240;
+          if (this.settings.window.height) {
+            this.settings.window.height = Math.min(Math.max(this.settings.window.height, 160), 600);
           }
-
-          if (!this.settings.window.width || this.settings.window.width > 480) {
-            this.settings.window.width = 240;
+          if (this.settings.window.rectWidth) {
+            this.settings.window.rectWidth = Math.min(
+              Math.max(this.settings.window.rectWidth, 160),
+              600
+            );
           }
-          if (!this.settings.window.height || this.settings.window.height > 480) {
-            this.settings.window.height = 240;
-          }
-          if (!this.settings.window.rectWidth || this.settings.window.rectWidth > 480) {
-            this.settings.window.rectWidth = this.settings.window.width;
-          }
-          if (!this.settings.window.rectHeight || this.settings.window.rectHeight > 480) {
-            this.settings.window.rectHeight = this.settings.window.height;
+          if (this.settings.window.rectHeight) {
+            this.settings.window.rectHeight = Math.min(
+              Math.max(this.settings.window.rectHeight, 160),
+              600
+            );
           }
         }
       }
@@ -103,6 +144,22 @@ class SettingsManager {
   saveSettings() {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(this.settings));
+      if (window.floatingCam?.saveSettings) {
+        window.floatingCam.saveSettings({
+          width: this.settings.window?.width,
+          height: this.settings.window?.height,
+          rectWidth: this.settings.window?.rectWidth,
+          rectHeight: this.settings.window?.rectHeight,
+          radius: this.settings.window?.borderRadius,
+          borderRadius: this.settings.window?.borderRadius,
+          isCircle: this.settings.camera?.isCircle,
+          isFlipped: this.settings.camera?.isFlipped,
+          deviceId: this.settings.camera?.deviceId,
+          alwaysOnTop: this.settings.window?.alwaysOnTop,
+          opacity: this.settings.window?.opacity,
+          theme: this.settings.ui?.theme
+        });
+      }
       this.emit('settings-saved', this.settings);
       return true;
     } catch (error) {
@@ -254,11 +311,18 @@ class SettingsManager {
 
   async applyWindowSettings(settings) {
     if (window.floatingCam) {
-      // Apply window size
+      // Apply window size only if significantly different from current window size
       if (settings.width && settings.height) {
-        const w = Math.min(Math.max(settings.width, 160), 500);
-        const h = Math.min(Math.max(settings.height, 160), 500);
-        await window.floatingCam.setWindowSize(w, h);
+        try {
+          const curSize = await window.floatingCam.getWindowSize?.();
+          const w = Math.min(Math.max(settings.width, 160), 600);
+          const h = Math.min(Math.max(settings.height, 160), 600);
+          if (!curSize || Math.abs(curSize.width - w) > 4 || Math.abs(curSize.height - h) > 4) {
+            await window.floatingCam.setWindowSize(w, h);
+          }
+        } catch (e) {
+          console.warn('Could not set window size:', e);
+        }
       }
 
       // Apply always on top
@@ -278,8 +342,8 @@ class SettingsManager {
     }
 
     // Apply border radius
-    if (settings.borderRadius && window.uiController) {
-      window.uiController.updateBorderRadius(settings.borderRadius);
+    if (settings.borderRadius !== undefined && window.uiController) {
+      window.uiController.updateBorderRadius(settings.borderRadius, false);
     }
   }
 
@@ -287,9 +351,13 @@ class SettingsManager {
     if (window.cameraManager) {
       // Apply flip state
       if (typeof settings.isFlipped === 'boolean') {
-        const currentFlip = window.cameraManager.getFlipState();
-        if (currentFlip !== settings.isFlipped) {
-          window.cameraManager.toggleFlip();
+        if (typeof window.cameraManager.setFlipped === 'function') {
+          window.cameraManager.setFlipped(settings.isFlipped);
+        } else if (typeof window.cameraManager.getFlipState === 'function') {
+          const currentFlip = window.cameraManager.getFlipState();
+          if (currentFlip !== settings.isFlipped) {
+            window.cameraManager.toggleFlip();
+          }
         }
       }
 

@@ -16,10 +16,12 @@ class FloatingCamApp {
       // Initialize settings first
       this.settingsManager = new SettingsManager();
       window.settingsManager = this.settingsManager;
+      await this.settingsManager.load();
 
       // Initialize UI controller
       this.uiController = new UIController();
       window.uiController = this.uiController;
+      await this.uiController.initShape();
 
       // Initialize camera manager
       this.cameraManager = new CameraManager();
@@ -121,32 +123,32 @@ class FloatingCamApp {
     try {
       // Handle specific setting changes
       switch (path) {
-        case 'window.width':
-        case 'window.height':
-          await this.applyWindowSize();
-          break;
+      case 'window.width':
+      case 'window.height':
+        await this.applyWindowSize();
+        break;
 
-        case 'window.opacity':
-          this.applyOpacity(value);
-          break;
+      case 'window.opacity':
+        this.applyOpacity(value);
+        break;
 
-        case 'window.borderRadius':
-          this.uiController.updateBorderRadius(value);
-          break;
+      case 'window.borderRadius':
+        this.uiController.updateBorderRadius(value);
+        break;
 
-        case 'camera.deviceId':
-          if (value && this.cameraManager.isActive()) {
-            this.cameraManager.switchCamera(value);
-          }
-          break;
+      case 'camera.deviceId':
+        if (value && this.cameraManager.isActive()) {
+          this.cameraManager.switchCamera(value);
+        }
+        break;
 
-        case 'ui.theme':
-          this.applyTheme(value);
-          break;
+      case 'ui.theme':
+        this.applyTheme(value);
+        break;
 
-        case 'ui.showToolbar':
-          this.toggleToolbar(value);
-          break;
+      case 'ui.showToolbar':
+        this.toggleToolbar(value);
+        break;
       }
     } catch (error) {
       console.error(`Failed to apply setting change for ${path}:`, error);
@@ -155,38 +157,38 @@ class FloatingCamApp {
 
   handleIPCMessage(message) {
     switch (message.type) {
-      case 'show-controls':
-        this.uiController.showControls();
-        break;
+    case 'show-controls':
+      this.uiController.showControls();
+      break;
 
-      case 'reload-camera':
-        this.cameraManager.initialize();
-        break;
+    case 'reload-camera':
+      this.cameraManager.initialize();
+      break;
 
-      case 'toggle-flip':
-        this.cameraManager.toggleFlip();
-        break;
+    case 'toggle-flip':
+      this.cameraManager.toggleFlip();
+      break;
 
-      case 'toggle-circle':
-        this.uiController.toggleCircle();
-        break;
+    case 'toggle-circle':
+      this.uiController.toggleCircle();
+      break;
 
-      case 'show-about':
-        this.showAboutDialog();
-        break;
+    case 'show-about':
+      this.showAboutDialog();
+      break;
 
-      case 'show-preferences':
-        this.showPreferences();
-        break;
+    case 'show-preferences':
+      this.showPreferences();
+      break;
 
-      case 'show-shortcuts':
-        this.showShortcuts();
-        break;
+    case 'show-shortcuts':
+      this.showShortcuts();
+      break;
 
-      case 'always-on-top-changed':
-        this.uiController.updateAlwaysOnTopUI(message.value);
-        this.settingsManager.set('window.alwaysOnTop', message.value);
-        break;
+    case 'always-on-top-changed':
+      this.uiController.updateAlwaysOnTopUI(message.value);
+      this.settingsManager.set('window.alwaysOnTop', message.value);
+      break;
     }
   }
 
@@ -207,13 +209,8 @@ class FloatingCamApp {
     try {
       const size = await window.floatingCam?.getWindowSize();
       if (size) {
-        let w = size.width;
-        let h = size.height;
-        if (w >= 480 && h >= 480) {
-          return; // Ignore oversized/legacy 500 values
-        }
-        w = Math.min(Math.max(w, 160), 500);
-        h = Math.min(Math.max(h, 160), 500);
+        const w = Math.min(Math.max(size.width, 160), 600);
+        const h = Math.min(Math.max(size.height, 160), 600);
         const updates = {
           'window.width': w,
           'window.height': h
@@ -224,6 +221,11 @@ class FloatingCamApp {
           updates['window.rectHeight'] = h;
         }
         this.settingsManager.update(updates);
+        window.floatingCam?.saveSettings?.(
+          this.uiController?.state?.isCircle
+            ? { width: w, height: h, isCircle: true }
+            : { width: w, height: h, rectWidth: w, rectHeight: h, isCircle: false }
+        );
       }
     } catch (error) {
       console.error('Failed to save window size:', error);
@@ -235,8 +237,8 @@ class FloatingCamApp {
     const height = this.settingsManager.get('window.height');
 
     if (width && height && window.floatingCam) {
-      const w = Math.min(Math.max(width, 160), 500);
-      const h = Math.min(Math.max(height, 160), 500);
+      const w = Math.min(Math.max(width, 160), 600);
+      const h = Math.min(Math.max(height, 160), 600);
       await window.floatingCam.setWindowSize(w, h);
     }
   }
