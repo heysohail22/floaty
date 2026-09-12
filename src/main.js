@@ -7,6 +7,7 @@ app.name = 'floaty';
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-transparent-visuals');
   app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
   app.disableHardwareAcceleration();
 
   // In development, ensure desktop launcher and icon are registered so the Linux dock displays the icon

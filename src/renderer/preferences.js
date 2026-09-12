@@ -464,9 +464,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         card.className = `source-card ${source.id === selectedSourceId ? 'selected' : ''}`;
         card.dataset.id = source.id;
 
+        const isScreenSource = source.isScreen;
+        const fallbackSvg = isScreenSource
+          ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
+          : '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>';
+
         card.innerHTML = `
           <div class="source-thumb-wrapper">
-            ${source.thumbnail ? `<img src="${source.thumbnail}" class="source-thumb" alt="${source.name}">` : ''}
+            ${
+              source.thumbnail
+                ? `<img src="${source.thumbnail}" class="source-thumb" alt="${source.name}">`
+                : `<div class="source-thumb-fallback">${fallbackSvg}<span>${isScreenSource ? 'Monitor Display' : 'App Window'}</span></div>`
+            }
           </div>
           <div class="source-check-badge">✓</div>
           <div class="source-info">
@@ -491,6 +500,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Audio Devices & Live Volume Monitor
     async function loadAudioDevices() {
       try {
+        // Trigger microphone warmup so browser requests permission and gets full hardware device names
+        try {
+          const warmupStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          warmupStream.getTracks().forEach(t => t.stop());
+        } catch (warmupErr) {
+          console.warn('Microphone warmup notice:', warmupErr);
+        }
+
         const devices = await navigator.mediaDevices.enumerateDevices();
         const audioInputs = devices.filter(d => d.kind === 'audioinput');
 
@@ -634,24 +651,53 @@ document.addEventListener('DOMContentLoaded', async () => {
             const sources = (await window.floatingCam?.getDesktopSources?.()) || [];
             if (sources.length > 0) {
               selectedSourceId = sources[0].id;
-            } else {
-              alert('Please select a screen or application to record.');
-              return;
             }
           }
 
-          captureStream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: selectedSourceId,
-                maxWidth: maxW,
-                maxHeight: maxH,
-                maxFrameRate: maxFps
-              }
+          const isWaylandSource =
+            !selectedSourceId ||
+            selectedSourceId.startsWith('display:') ||
+            selectedSourceId.startsWith('wayland:') ||
+            selectedSourceId.includes('system-picker');
+
+          if (isWaylandSource || !navigator.mediaDevices.getUserMedia) {
+            captureStream = await navigator.mediaDevices.getDisplayMedia({
+              video: {
+                width: { ideal: maxW },
+                height: { ideal: maxH },
+                frameRate: { ideal: maxFps }
+              },
+              audio: false
+            });
+          } else {
+            try {
+              captureStream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: {
+                  mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: selectedSourceId,
+                    maxWidth: maxW,
+                    maxHeight: maxH,
+                    maxFrameRate: maxFps
+                  }
+                }
+              });
+            } catch (desktopErr) {
+              console.warn(
+                'getUserMedia desktop capture error, falling back to getDisplayMedia:',
+                desktopErr
+              );
+              captureStream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                  width: { ideal: maxW },
+                  height: { ideal: maxH },
+                  frameRate: { ideal: maxFps }
+                },
+                audio: false
+              });
             }
-          });
+          }
         }
 
         // Attach Microphone Audio if not muted
@@ -894,9 +940,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       lastRecordedBlob = null;
     }
 
-    // Initial loads
-    await loadSources();
-    await loadAudioDevices();
+    // Initial loads concurrently
+    await Promise.allSettled([loadSources(), loadAudioDevices()]);
   }
 
   // Initial runs

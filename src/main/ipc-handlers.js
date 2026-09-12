@@ -28,6 +28,7 @@ class IPCHandlers {
         window.setSize(w, h, true);
         this.windowManager.applyWindowShape();
         this.windowManager.saveWindowState();
+        this.windowManager.saveSettings({ width: w, height: h });
         return true;
       }
       return false;
@@ -133,6 +134,21 @@ class IPCHandlers {
         }
       } else if (key === 'shape' && value) {
         this.windowManager.setShape(value.isCircle, value.radius);
+      } else if (key === 'size' && value) {
+        const w = Math.max(160, Math.min(600, parseInt(value.width, 10)));
+        const h = Math.max(160, Math.min(600, parseInt(value.height, 10)));
+        const win = this.windowManager.getWindow();
+        if (win && !win.isDestroyed()) {
+          win.setSize(w, h, true);
+          this.windowManager.applyWindowShape();
+        }
+        this.windowManager.saveWindowState();
+        this.windowManager.saveSettings({ width: w, height: h });
+      } else if (key === 'alwaysOnTop') {
+        this.windowManager.setAlwaysOnTop(Boolean(value));
+        this.windowManager.saveSettings({ alwaysOnTop: Boolean(value) });
+      } else if (key) {
+        this.windowManager.saveSettings({ [key]: value });
       }
 
       const mainWindow = this.windowManager.getWindow();
@@ -158,14 +174,32 @@ class IPCHandlers {
       return app.getVersion();
     });
 
-    // Settings handlers (will be expanded)
+    // Settings handlers
     ipcMain.handle('get-settings', () => {
-      // TODO: Implement settings storage
-      return {};
+      const saved = this.windowManager.loadSettings();
+      return {
+        ...saved,
+        isCircle: Boolean(this.windowManager.isCircle),
+        radius: this.windowManager.radius !== undefined ? this.windowManager.radius : 16
+      };
     });
 
     ipcMain.handle('save-settings', (event, settings) => {
-      // TODO: Implement settings storage
+      if (settings && typeof settings === 'object') {
+        if (typeof settings.isCircle === 'boolean' || settings.radius !== undefined) {
+          this.windowManager.setShape(settings.isCircle, settings.radius);
+        }
+        if (settings.width && settings.height) {
+          const w = Math.max(160, Math.min(600, parseInt(settings.width, 10)));
+          const h = Math.max(160, Math.min(600, parseInt(settings.height, 10)));
+          const win = this.windowManager.getWindow();
+          if (win && !win.isDestroyed()) {
+            win.setSize(w, h, true);
+            this.windowManager.applyWindowShape();
+          }
+        }
+        return this.windowManager.saveSettings(settings);
+      }
       return true;
     });
 
@@ -179,20 +213,66 @@ class IPCHandlers {
     // Screen & Application capture sources
     ipcMain.handle('get-desktop-sources', async () => {
       try {
-        const sources = await desktopCapturer.getSources({
-          types: ['screen', 'window'],
-          thumbnailSize: { width: 360, height: 200 },
-          fetchWindowIcons: true
-        });
+        const isWayland =
+          process.platform === 'linux' &&
+          Boolean(process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland');
 
-        return sources.map(source => ({
-          id: source.id,
-          name: source.name,
-          display_id: source.display_id,
-          isScreen: source.id.startsWith('screen:'),
-          thumbnail: source.thumbnail ? source.thumbnail.toDataURL() : null,
-          appIcon: source.appIcon ? source.appIcon.toDataURL() : null
-        }));
+        if (isWayland) {
+          const { screen } = require('electron');
+          const displays = screen.getAllDisplays();
+          const mappedSources = displays.map((d, idx) => ({
+            id: `display:${d.id}`,
+            name:
+              displays.length > 1
+                ? `Screen ${idx + 1} (${d.bounds.width}×${d.bounds.height})`
+                : `Primary Display (${d.bounds.width}×${d.bounds.height})`,
+            display_id: String(d.id),
+            isScreen: true,
+            isWayland: true,
+            width: d.bounds.width,
+            height: d.bounds.height,
+            thumbnail: null,
+            appIcon: null
+          }));
+
+          mappedSources.push({
+            id: 'wayland:system-picker',
+            name: 'Choose Application Window (System Selector)',
+            display_id: '',
+            isScreen: false,
+            isWayland: true,
+            thumbnail: null,
+            appIcon: null
+          });
+
+          return mappedSources;
+        }
+
+        // On X11 / macOS / Windows:
+        let sources = [];
+        try {
+          sources = await desktopCapturer.getSources({
+            types: ['screen', 'window'],
+            thumbnailSize: { width: 320, height: 180 },
+            fetchWindowIcons: true
+          });
+        } catch (capturerErr) {
+          console.warn('desktopCapturer.getSources notice:', capturerErr);
+        }
+
+        const mappedSources = sources
+          .filter(s => s.name || s.id.startsWith('screen:'))
+          .map(source => ({
+            id: source.id,
+            name: source.name || 'Screen Display',
+            display_id: source.display_id,
+            isScreen: source.id.startsWith('screen:'),
+            thumbnail:
+              source.thumbnail && !source.thumbnail.isEmpty() ? source.thumbnail.toDataURL() : null,
+            appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null
+          }));
+
+        return mappedSources;
       } catch (err) {
         console.error('Failed to get desktop sources:', err);
         return [];

@@ -47,6 +47,42 @@ class WindowManager {
     this.radius = 16;
   }
 
+  getSettingsPath() {
+    try {
+      return path.join(app.getPath('userData'), 'floaty-settings.json');
+    } catch {
+      return null;
+    }
+  }
+
+  loadSettings() {
+    try {
+      const p = this.getSettingsPath();
+      if (p && fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, 'utf8');
+        return JSON.parse(raw);
+      }
+    } catch (e) {
+      console.warn('Could not read floaty-settings.json', e);
+    }
+    return {};
+  }
+
+  saveSettings(newSettings = {}) {
+    try {
+      const p = this.getSettingsPath();
+      if (p) {
+        const current = this.loadSettings();
+        const merged = { ...current, ...newSettings };
+        fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf8');
+        return merged;
+      }
+    } catch (e) {
+      console.warn('Could not save floaty-settings.json', e);
+    }
+    return null;
+  }
+
   getWindowStatePath() {
     try {
       return path.join(app.getPath('userData'), 'window-state.json');
@@ -62,10 +98,6 @@ class WindowManager {
         const raw = fs.readFileSync(statePath, 'utf8');
         const data = JSON.parse(raw);
         if (data.width >= 160 && data.width <= 600 && data.height >= 160 && data.height <= 600) {
-          if (data.width >= 480 && data.height >= 480) {
-            data.width = 240;
-            data.height = 240;
-          }
           return data;
         }
       }
@@ -81,12 +113,13 @@ class WindowManager {
       if (statePath && this.window && !this.window.isDestroyed()) {
         const [w, h] = this.window.getSize();
         const data = {
-          width: w >= 480 && h >= 480 ? 240 : w,
-          height: w >= 480 && h >= 480 ? 240 : h,
-          isCircle: this.isCircle,
-          radius: this.radius
+          width: Math.max(160, Math.min(600, w)),
+          height: Math.max(160, Math.min(600, h)),
+          isCircle: Boolean(this.isCircle),
+          radius: Number(this.radius) || 16
         };
         fs.writeFileSync(statePath, JSON.stringify(data, null, 2), 'utf8');
+        this.saveSettings(data);
       }
     } catch (e) {
       console.warn('Could not save window-state.json', e);
@@ -94,11 +127,19 @@ class WindowManager {
   }
 
   createWindow() {
+    const savedSettings = this.loadSettings();
     const savedState = this.loadWindowState();
-    const initialWidth = savedState?.width || 240;
-    const initialHeight = savedState?.height || 240;
-    this.isCircle = Boolean(savedState?.isCircle);
-    this.radius = savedState?.radius !== undefined ? savedState.radius : 16;
+
+    const initialWidth = savedSettings?.width || savedState?.width || 240;
+    const initialHeight = savedSettings?.height || savedState?.height || 240;
+    this.isCircle =
+      savedSettings.isCircle !== undefined
+        ? Boolean(savedSettings.isCircle)
+        : Boolean(savedState?.isCircle);
+    this.radius =
+      savedSettings.radius !== undefined
+        ? Number(savedSettings.radius)
+        : (savedState?.radius !== undefined ? Number(savedState.radius) : 16);
 
     const iconPath = path.join(__dirname, '../../assets/icon.png');
     const appIcon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : null;
@@ -206,6 +247,10 @@ class WindowManager {
     }
     this.applyWindowShape();
     this.saveWindowState();
+    this.saveSettings({
+      isCircle: this.isCircle,
+      radius: this.radius
+    });
   }
 
   getWindow() {

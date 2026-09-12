@@ -62,9 +62,15 @@ class AppManager {
     if (session.defaultSession) {
       session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
         if (
-          ['media', 'videoCapture', 'camera', 'microphone', 'display-capture', 'screen'].includes(
-            permission
-          )
+          [
+            'media',
+            'videoCapture',
+            'audioCapture',
+            'camera',
+            'microphone',
+            'display-capture',
+            'screen'
+          ].includes(permission)
         ) {
           return callback(true);
         }
@@ -73,9 +79,15 @@ class AppManager {
 
       session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
         if (
-          ['media', 'videoCapture', 'camera', 'microphone', 'display-capture', 'screen'].includes(
-            permission
-          )
+          [
+            'media',
+            'videoCapture',
+            'audioCapture',
+            'camera',
+            'microphone',
+            'display-capture',
+            'screen'
+          ].includes(permission)
         ) {
           return true;
         }
@@ -84,6 +96,12 @@ class AppManager {
 
       if (session.defaultSession.setDevicePermissionHandler) {
         session.defaultSession.setDevicePermissionHandler(() => true);
+      }
+
+      if (session.defaultSession.setDisplayMediaRequestHandler) {
+        session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+          callback({ useSystemPicker: true });
+        });
       }
     }
 
