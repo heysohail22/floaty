@@ -356,9 +356,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // =========================================================================
-  // Loom-Style Screen & App Recording Studio
+  // Loom-Style Screen & App Recording Studio (with RAM Saver Mode)
   // =========================================================================
   async function initRecordingStudio() {
+    const enableRecordingSwitch = document.getElementById('enableRecordingSwitch');
+    const recordingStatusBadge = document.getElementById('recordingStatusBadge');
+    const recordingDisabledState = document.getElementById('recordingDisabledState');
+    const recordingStudioContent = document.getElementById('recordingStudioContent');
+    const enableRecordingBtn = document.getElementById('enableRecordingBtn');
+
     const modeCards = document.querySelectorAll('.mode-card');
     const sourcePickerCard = document.getElementById('sourcePickerCard');
     const filterScreensBtn = document.getElementById('filterScreensBtn');
@@ -408,6 +414,134 @@ document.addEventListener('DOMContentLoaded', async () => {
     let lastRecordedBlob = null;
     let savedRecordingPath = null;
 
+    // RAM Saver & Defaults
+    const settings = await window.floatingCam?.getSettings?.();
+    const savedRecMode = localStorage.getItem('floaty_enable_recording');
+    const isRecordingModeEnabled =
+      savedRecMode !== null
+        ? savedRecMode === 'true'
+        : settings?.recordingEnabled !== undefined
+          ? Boolean(settings.recordingEnabled)
+          : false;
+
+    const savedMuteMic = localStorage.getItem('floaty_mute_mic');
+    const isMicMuted =
+      savedMuteMic !== null
+        ? savedMuteMic === 'true'
+        : settings?.micMuted !== undefined
+          ? Boolean(settings.micMuted)
+          : true;
+
+    function stopMicMonitoring() {
+      if (micMonitorStream) {
+        micMonitorStream.getTracks().forEach(t => t.stop());
+        micMonitorStream = null;
+      }
+      if (micAudioContext && micAudioContext.state !== 'closed') {
+        try {
+          micAudioContext.close();
+        } catch (_e) {
+          // ignore error on close
+        }
+        micAudioContext = null;
+      }
+      micAnalyser = null;
+      if (micLevelFill) micLevelFill.style.width = '0%';
+      if (micLevelLabel) micLevelLabel.textContent = 'Muted';
+      if (micStatusBadge) {
+        micStatusBadge.innerHTML = '<span style="color: #94a3b8;">Muted</span>';
+      }
+    }
+
+    function stopAllRecordingResources() {
+      stopMicMonitoring();
+      if (activeStream) {
+        activeStream.getTracks().forEach(t => t.stop());
+        activeStream = null;
+      }
+      if (activeMediaRecorder && activeMediaRecorder.state !== 'inactive') {
+        try {
+          activeMediaRecorder.stop();
+        } catch (_e) {
+          // ignore error on stop
+        }
+        activeMediaRecorder = null;
+      }
+      window.floatingCam?.closeRecordingBar?.();
+      availableSources = [];
+      selectedSourceId = null;
+      if (sourcesContainer) {
+        sourcesContainer.innerHTML = '';
+      }
+    }
+
+    async function setRecordingMode(enabled, persist = true) {
+      const isEnabled = Boolean(enabled);
+      if (enableRecordingSwitch) enableRecordingSwitch.checked = isEnabled;
+
+      if (isEnabled) {
+        if (recordingStatusBadge) {
+          recordingStatusBadge.textContent = 'Active';
+          recordingStatusBadge.className = 'status-badge active-badge';
+        }
+        if (recordingDisabledState) recordingDisabledState.style.display = 'none';
+        if (recordingStudioContent) recordingStudioContent.style.display = 'block';
+
+        // Load sources and microphones on demand
+        await Promise.allSettled([loadSources(), loadAudioDevices()]);
+      } else {
+        if (recordingStatusBadge) {
+          recordingStatusBadge.textContent = 'Disabled (RAM Saver Active)';
+          recordingStatusBadge.className = 'status-badge ram-active';
+        }
+        if (recordingDisabledState) recordingDisabledState.style.display = 'flex';
+        if (recordingStudioContent) recordingStudioContent.style.display = 'none';
+
+        // Release all RAM / media resources immediately
+        stopAllRecordingResources();
+      }
+
+      if (persist) {
+        localStorage.setItem('floaty_enable_recording', isEnabled);
+        window.floatingCam?.saveSettings?.({ recordingEnabled: isEnabled });
+      }
+    }
+
+    enableRecordingSwitch?.addEventListener('change', e => {
+      setRecordingMode(e.target.checked, true);
+    });
+
+    enableRecordingBtn?.addEventListener('click', () => {
+      setRecordingMode(true, true);
+    });
+
+    if (muteMicSwitch) {
+      muteMicSwitch.checked = isMicMuted;
+      if (isMicMuted) {
+        if (micLevelFill) micLevelFill.style.width = '0%';
+        if (micLevelLabel) micLevelLabel.textContent = 'Muted';
+        if (micStatusBadge) {
+          micStatusBadge.innerHTML = '<span style="color: #94a3b8;">Muted</span>';
+        }
+      }
+    }
+
+    muteMicSwitch?.addEventListener('change', () => {
+      const isMuted = muteMicSwitch.checked;
+      localStorage.setItem('floaty_mute_mic', isMuted);
+      window.floatingCam?.saveSettings?.({ micMuted: isMuted });
+      if (isMuted) {
+        stopMicMonitoring();
+      } else {
+        if (micStatusBadge) {
+          micStatusBadge.innerHTML = '<span class="live-pulse"></span><span>Active</span>';
+        }
+        if (enableRecordingSwitch?.checked) {
+          startMicMonitoring();
+        }
+      }
+    });
+
     // Mode selection
     modeCards.forEach(card => {
       card.addEventListener('click', () => {
@@ -443,6 +577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     async function loadSources() {
+      if (!enableRecordingSwitch?.checked) return;
       if (!sourcesContainer) return;
       sourcesContainer.innerHTML = `
         <div class="sources-loading">
@@ -521,13 +656,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Audio Devices & Live Volume Monitor
     async function loadAudioDevices() {
+      if (!enableRecordingSwitch?.checked) return;
+
       try {
-        // Trigger microphone warmup so browser requests permission and gets full hardware device names
-        try {
-          const warmupStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          warmupStream.getTracks().forEach(t => t.stop());
-        } catch (warmupErr) {
-          console.warn('Microphone warmup notice:', warmupErr);
+        // Trigger microphone warmup only if user has un-muted the mic
+        if (!muteMicSwitch?.checked) {
+          try {
+            const warmupStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            warmupStream.getTracks().forEach(t => t.stop());
+          } catch (warmupErr) {
+            console.warn('Microphone warmup notice:', warmupErr);
+          }
         }
 
         const devices = await navigator.mediaDevices.enumerateDevices();
@@ -962,8 +1101,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       lastRecordedBlob = null;
     }
 
-    // Initial loads concurrently
-    await Promise.allSettled([loadSources(), loadAudioDevices()]);
+    // Apply initial recording mode (disabled by default, saving 100% RAM & CPU)
+    await setRecordingMode(isRecordingModeEnabled, false);
   }
 
   // Initial runs
