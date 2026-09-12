@@ -34,11 +34,33 @@ contextBridge.exposeInMainWorld('floatingCam', {
 
   // Dedicated Preferences Window & Realtime Setting Sync
   openPreferences: () => ipcRenderer.invoke('open-preferences'),
+  hidePreferences: () => ipcRenderer.invoke('hide-preferences'),
+  showPreferences: () => ipcRenderer.invoke('show-preferences'),
   syncSetting: (key, value) => ipcRenderer.invoke('sync-setting', { key, value }),
   onSettingSynced: callback => {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('setting-synced', handler);
     return () => ipcRenderer.removeListener('setting-synced', handler);
+  },
+
+  // Loom-style Desktop Recording & Capture
+  getDesktopSources: () => ipcRenderer.invoke('get-desktop-sources'),
+  saveRecording: (buffer, defaultName) =>
+    ipcRenderer.invoke('save-recording', { buffer, defaultName }),
+  showInFolder: filePath => ipcRenderer.invoke('show-item-in-folder', filePath),
+  openRecordingBar: () => ipcRenderer.invoke('open-recording-bar'),
+  closeRecordingBar: () => ipcRenderer.invoke('close-recording-bar'),
+  updateRecordingBar: data => ipcRenderer.invoke('update-recording-bar', data),
+  sendRecordingAction: action => ipcRenderer.invoke('send-recording-action', action),
+  onRecordingBarUpdate: callback => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('recording-bar-update', handler);
+    return () => ipcRenderer.removeListener('recording-bar-update', handler);
+  },
+  onRecordingAction: callback => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('recording-action', handler);
+    return () => ipcRenderer.removeListener('recording-action', handler);
   }
 });
 

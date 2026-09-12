@@ -1,0 +1,172 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+  font-family:
+    'Plus Jakarta Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+.recording-capsule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(14, 16, 24, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    0 0 15px rgba(239, 68, 68, 0.18);
+  border-radius: 9999px;
+  padding: 6px 12px 6px 10px;
+  height: 48px;
+  width: max-content;
+  margin: 6px auto;
+  -webkit-app-region: drag;
+  transition: all 0.2s ease;
+}
+
+.recording-capsule:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: grab;
+  padding: 0 2px;
+}
+
+.recording-capsule:active .drag-handle {
+  cursor: grabbing;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.rec-dot.paused {
+  background: #f59e0b;
+  box-shadow: 0 0 10px #f59e0b;
+  animation: none;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 0.6;
+  }
+}
+
+.rec-timer {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+}
+
+.divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.controls-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.action-btn {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 9999px;
+  transition: all 0.18s ease;
+  -webkit-app-region: no-drag;
+}
+
+.pause-btn {
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+.pause-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  transform: scale(1.05);
+}
+
+.finish-btn {
+  height: 30px;
+  padding: 0 12px;
+  gap: 5px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+}
+
+.finish-btn:hover {
+  background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.5);
+  transform: translateY(-1px);
+}
+
+.finish-btn:active {
+  transform: translateY(1px);
+}
+
+.cancel-btn {
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+}
+
+.cancel-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  transform: scale(1.05);
+}

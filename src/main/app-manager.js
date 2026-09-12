@@ -61,14 +61,22 @@ class AppManager {
     // Grant media permissions (camera, microphone)
     if (session.defaultSession) {
       session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-        if (['media', 'videoCapture', 'camera', 'microphone'].includes(permission)) {
+        if (
+          ['media', 'videoCapture', 'camera', 'microphone', 'display-capture', 'screen'].includes(
+            permission
+          )
+        ) {
           return callback(true);
         }
         callback(false);
       });
 
       session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
-        if (['media', 'videoCapture', 'camera', 'microphone'].includes(permission)) {
+        if (
+          ['media', 'videoCapture', 'camera', 'microphone', 'display-capture', 'screen'].includes(
+            permission
+          )
+        ) {
           return true;
         }
         return false;

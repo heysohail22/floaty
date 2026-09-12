@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;"
+    />
+    <title>Recording Controls</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="recording-bar.css" />
+  </head>
+  <body>
+    <div class="recording-capsule" id="recordingCapsule">
+      <div class="drag-handle" title="Drag to reposition">
+        <svg width="6" height="18" viewBox="0 0 6 18" fill="currentColor">
+          <circle cx="2" cy="3" r="1.5" />
+          <circle cx="2" cy="9" r="1.5" />
+          <circle cx="2" cy="15" r="1.5" />
+          <circle cx="5" cy="3" r="1.5" />
+          <circle cx="5" cy="9" r="1.5" />
+          <circle cx="5" cy="15" r="1.5" />
+        </svg>
+      </div>
+
+      <div class="status-indicator">
+        <span class="rec-dot" id="recDot"></span>
+        <span class="rec-timer" id="recTimer">00:00</span>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="controls-group">
+        <button class="action-btn pause-btn" id="pauseBtn" title="Pause / Resume">
+          <svg id="pauseIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1.5"></rect>
+            <rect x="14" y="4" width="4" height="16" rx="1.5"></rect>
+          </svg>
+          <svg id="resumeIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="display: none">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+        </button>
+
+        <button class="action-btn finish-btn" id="finishBtn" title="Finish & Save Recording">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Finish</span>
+        </button>
+
+        <button class="action-btn cancel-btn" id="cancelBtn" title="Cancel & Discard">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <script src="recording-bar.js"></script>
+  </body>
+</html>

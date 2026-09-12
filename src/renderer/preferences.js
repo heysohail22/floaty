@@ -333,9 +333,576 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // =========================================================================
+  // Loom-Style Screen & App Recording Studio
+  // =========================================================================
+  async function initRecordingStudio() {
+    const modeCards = document.querySelectorAll('.mode-card');
+    const sourcePickerCard = document.getElementById('sourcePickerCard');
+    const filterScreensBtn = document.getElementById('filterScreensBtn');
+    const filterWindowsBtn = document.getElementById('filterWindowsBtn');
+    const refreshSourcesBtn = document.getElementById('refreshSourcesBtn');
+    const sourcesContainer = document.getElementById('sourcesContainer');
+
+    const micSelect = document.getElementById('micSelect');
+    const micStatusBadge = document.getElementById('micStatusBadge');
+    const micLevelFill = document.getElementById('micLevelFill');
+    const micLevelLabel = document.getElementById('micLevelLabel');
+    const muteMicSwitch = document.getElementById('muteMicSwitch');
+
+    const countdownSwitch = document.getElementById('countdownSwitch');
+    const recordingQualitySelect = document.getElementById('recordingQualitySelect');
+    const startRecordBtn = document.getElementById('startRecordBtn');
+
+    const countdownOverlay = document.getElementById('countdownOverlay');
+    const countdownNumber = document.getElementById('countdownNumber');
+
+    const previewModal = document.getElementById('previewModal');
+    const previewVideoPlayer = document.getElementById('previewVideoPlayer');
+    const previewDuration = document.getElementById('previewDuration');
+    const previewSize = document.getElementById('previewSize');
+    const previewFormat = document.getElementById('previewFormat');
+    const saveRecordingBtn = document.getElementById('saveRecordingBtn');
+    const revealFileBtn = document.getElementById('revealFileBtn');
+    const discardRecordingBtn = document.getElementById('discardRecordingBtn');
+    const closePreviewBtn = document.getElementById('closePreviewBtn');
+
+    let currentMode = 'screen-cam';
+    let currentFilter = 'screen';
+    let availableSources = [];
+    let selectedSourceId = null;
+
+    let micMonitorStream = null;
+    let micAudioContext = null;
+    let micAnalyser = null;
+    const isMonitoringMic = true;
+
+    let activeMediaRecorder = null;
+    let activeStream = null;
+    let recordedChunks = [];
+    let recordingTimer = null;
+    let recordingSeconds = 0;
+    let isPaused = false;
+    let lastRecordedBlob = null;
+    let savedRecordingPath = null;
+
+    // Mode selection
+    modeCards.forEach(card => {
+      card.addEventListener('click', () => {
+        modeCards.forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        currentMode = card.dataset.mode;
+
+        if (currentMode === 'cam-only') {
+          if (sourcePickerCard) sourcePickerCard.style.display = 'none';
+        } else {
+          if (sourcePickerCard) sourcePickerCard.style.display = 'block';
+        }
+      });
+    });
+
+    // Source Filter Switching (Screens vs Applications)
+    filterScreensBtn?.addEventListener('click', () => {
+      filterScreensBtn.classList.add('active');
+      filterWindowsBtn?.classList.remove('active');
+      currentFilter = 'screen';
+      renderSources();
+    });
+
+    filterWindowsBtn?.addEventListener('click', () => {
+      filterWindowsBtn.classList.add('active');
+      filterScreensBtn?.classList.remove('active');
+      currentFilter = 'window';
+      renderSources();
+    });
+
+    refreshSourcesBtn?.addEventListener('click', () => {
+      loadSources();
+    });
+
+    async function loadSources() {
+      if (!sourcesContainer) return;
+      sourcesContainer.innerHTML = `
+        <div class="sources-loading">
+          <div class="spinner"></div>
+          <span>Scanning displays & applications...</span>
+        </div>
+      `;
+
+      try {
+        const sources = (await window.floatingCam?.getDesktopSources?.()) || [];
+        availableSources = sources;
+        if (!selectedSourceId && sources.length > 0) {
+          const primaryScreen = sources.find(s => s.isScreen) || sources[0];
+          selectedSourceId = primaryScreen.id;
+        }
+        renderSources();
+      } catch (err) {
+        console.error('Failed to get sources:', err);
+        sourcesContainer.innerHTML =
+          '<div class="sources-empty">Could not load capture sources.</div>';
+      }
+    }
+
+    function renderSources() {
+      if (!sourcesContainer) return;
+      const filtered = availableSources.filter(s => {
+        if (currentFilter === 'screen') return s.isScreen;
+        return !s.isScreen;
+      });
+
+      if (filtered.length === 0) {
+        sourcesContainer.innerHTML = `<div class="sources-empty">No ${currentFilter === 'screen' ? 'displays' : 'open application windows'} found.</div>`;
+        return;
+      }
+
+      const grid = document.createElement('div');
+      grid.className = 'sources-grid';
+
+      filtered.forEach(source => {
+        const card = document.createElement('div');
+        card.className = `source-card ${source.id === selectedSourceId ? 'selected' : ''}`;
+        card.dataset.id = source.id;
+
+        card.innerHTML = `
+          <div class="source-thumb-wrapper">
+            ${source.thumbnail ? `<img src="${source.thumbnail}" class="source-thumb" alt="${source.name}">` : ''}
+          </div>
+          <div class="source-check-badge">✓</div>
+          <div class="source-info">
+            ${source.appIcon ? `<img src="${source.appIcon}" class="source-app-icon" alt="App Icon">` : ''}
+            <span class="source-title" title="${source.name}">${source.name}</span>
+          </div>
+        `;
+
+        card.addEventListener('click', () => {
+          selectedSourceId = source.id;
+          document.querySelectorAll('.source-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+        });
+
+        grid.appendChild(card);
+      });
+
+      sourcesContainer.innerHTML = '';
+      sourcesContainer.appendChild(grid);
+    }
+
+    // Audio Devices & Live Volume Monitor
+    async function loadAudioDevices() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+
+        if (!micSelect) return;
+        micSelect.innerHTML = '';
+        if (audioInputs.length === 0) {
+          micSelect.innerHTML = '<option value="">No microphones found</option>';
+          return;
+        }
+
+        const savedMicId = localStorage.getItem('floaty_mic_id') || '';
+
+        audioInputs.forEach((device, index) => {
+          const opt = document.createElement('option');
+          opt.value = device.deviceId;
+          opt.textContent = device.label || `Microphone ${index + 1}`;
+          if (device.deviceId === savedMicId || (!savedMicId && index === 0)) {
+            opt.selected = true;
+          }
+          micSelect.appendChild(opt);
+        });
+
+        startMicMonitoring();
+      } catch (err) {
+        console.warn('Could not enumerate microphones:', err);
+      }
+    }
+
+    micSelect?.addEventListener('change', () => {
+      localStorage.setItem('floaty_mic_id', micSelect.value);
+      startMicMonitoring();
+    });
+
+    muteMicSwitch?.addEventListener('change', () => {
+      const isMuted = muteMicSwitch.checked;
+      if (isMuted) {
+        if (micLevelFill) micLevelFill.style.width = '0%';
+        if (micLevelLabel) micLevelLabel.textContent = 'Muted';
+        if (micStatusBadge) {
+          micStatusBadge.innerHTML = '<span style="color: #94a3b8;">Muted</span>';
+        }
+      } else {
+        if (micStatusBadge) {
+          micStatusBadge.innerHTML = '<span class="live-pulse"></span><span>Active</span>';
+        }
+        startMicMonitoring();
+      }
+    });
+
+    async function startMicMonitoring() {
+      if (muteMicSwitch?.checked) return;
+
+      try {
+        if (micMonitorStream) {
+          micMonitorStream.getTracks().forEach(t => t.stop());
+        }
+        if (micAudioContext && micAudioContext.state !== 'closed') {
+          micAudioContext.close();
+        }
+
+        const deviceId = micSelect?.value;
+        micMonitorStream = await navigator.mediaDevices.getUserMedia({
+          audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+          video: false
+        });
+
+        micAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        micAnalyser = micAudioContext.createAnalyser();
+        micAnalyser.fftSize = 256;
+
+        const source = micAudioContext.createMediaStreamSource(micMonitorStream);
+        source.connect(micAnalyser);
+
+        const bufferLength = micAnalyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const updateMeter = () => {
+          if (!isMonitoringMic || muteMicSwitch?.checked) return;
+
+          micAnalyser.getByteTimeDomainData(dataArray);
+          let sumSquares = 0.0;
+          for (let i = 0; i < bufferLength; i++) {
+            const norm = (dataArray[i] - 128) / 128;
+            sumSquares += norm * norm;
+          }
+          const rms = Math.sqrt(sumSquares / bufferLength);
+          const level = Math.min(100, Math.round(rms * 280));
+
+          if (micLevelFill) micLevelFill.style.width = `${level}%`;
+          if (micLevelLabel) micLevelLabel.textContent = `${level}%`;
+
+          requestAnimationFrame(updateMeter);
+        };
+
+        updateMeter();
+      } catch (e) {
+        console.warn('Microphone monitoring unavailable:', e);
+        if (micLevelLabel) micLevelLabel.textContent = 'Standby';
+      }
+    }
+
+    // Format Duration Helper
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    // Start Recording Pipeline
+    startRecordBtn?.addEventListener('click', async () => {
+      try {
+        const quality = recordingQualitySelect?.value || '1080p';
+        let maxW = 1920,
+          maxH = 1080,
+          maxFps = 60;
+        if (quality === '720p') {
+          maxW = 1280;
+          maxH = 720;
+          maxFps = 30;
+        } else if (quality === 'max') {
+          maxW = 3840;
+          maxH = 2160;
+          maxFps = 60;
+        }
+
+        let captureStream = null;
+
+        if (currentMode === 'cam-only') {
+          const camId = cameraSelect?.value;
+          captureStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: camId ? { exact: camId } : undefined,
+              width: { ideal: maxW },
+              height: { ideal: maxH },
+              frameRate: { ideal: maxFps }
+            },
+            audio: false
+          });
+        } else {
+          if (!selectedSourceId) {
+            const sources = (await window.floatingCam?.getDesktopSources?.()) || [];
+            if (sources.length > 0) {
+              selectedSourceId = sources[0].id;
+            } else {
+              alert('Please select a screen or application to record.');
+              return;
+            }
+          }
+
+          captureStream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: selectedSourceId,
+                maxWidth: maxW,
+                maxHeight: maxH,
+                maxFrameRate: maxFps
+              }
+            }
+          });
+        }
+
+        // Attach Microphone Audio if not muted
+        const isMuted = muteMicSwitch?.checked;
+        let finalStream = captureStream;
+
+        if (!isMuted) {
+          try {
+            const micId = micSelect?.value;
+            const micStream = await navigator.mediaDevices.getUserMedia({
+              audio: micId ? { deviceId: { exact: micId } } : true,
+              video: false
+            });
+            finalStream = new MediaStream([
+              ...captureStream.getVideoTracks(),
+              ...micStream.getAudioTracks()
+            ]);
+          } catch (micErr) {
+            console.warn('Could not attach microphone to recording:', micErr);
+          }
+        }
+
+        activeStream = finalStream;
+
+        // 3-2-1 Countdown if enabled
+        const showCountdown = countdownSwitch?.checked;
+        if (showCountdown && countdownOverlay && countdownNumber) {
+          countdownOverlay.classList.add('show');
+          for (let count = 3; count > 0; count--) {
+            countdownNumber.textContent = count;
+            await new Promise(r => setTimeout(r, 900));
+          }
+          countdownNumber.textContent = 'GO!';
+          await new Promise(r => setTimeout(r, 450));
+          countdownOverlay.classList.remove('show');
+        }
+
+        // Adjust camera bubble visibility based on mode
+        if (currentMode === 'screen-only') {
+          window.floatingCam?.hideWindow?.();
+        } else if (currentMode === 'screen-cam') {
+          window.floatingCam?.showWindow?.();
+        }
+
+        // Hide Preferences window so it's not captured in recording
+        window.floatingCam?.hidePreferences?.();
+
+        // Initialize MediaRecorder
+        let mimeType = 'video/webm;codecs=vp9,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm;codecs=vp8,opus';
+        }
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm';
+        }
+
+        recordedChunks = [];
+        activeMediaRecorder = new MediaRecorder(finalStream, {
+          mimeType,
+          videoBitsPerSecond: quality === '1080p' ? 5000000 : 2500000
+        });
+
+        activeMediaRecorder.ondataavailable = e => {
+          if (e.data && e.data.size > 0) {
+            recordedChunks.push(e.data);
+          }
+        };
+
+        activeMediaRecorder.onstop = () => {
+          finalizeRecording(mimeType);
+        };
+
+        activeMediaRecorder.start(1000); // 1-second timeslices
+        recordingSeconds = 0;
+        isPaused = false;
+
+        // Open floating recording capsule
+        await window.floatingCam?.openRecordingBar?.();
+        window.floatingCam?.updateRecordingBar?.({ time: '00:00', state: 'recording' });
+
+        recordingTimer = setInterval(() => {
+          if (!isPaused) {
+            recordingSeconds++;
+            const formatted = formatTime(recordingSeconds);
+            window.floatingCam?.updateRecordingBar?.({ time: formatted, state: 'recording' });
+          }
+        }, 1000);
+      } catch (err) {
+        console.error('Recording initialization failed:', err);
+        alert(`Could not start recording: ${err.message || err}`);
+        window.floatingCam?.showPreferences?.();
+      }
+    });
+
+    // Recording Actions triggered by floating control pill
+    window.floatingCam?.onRecordingAction?.(action => {
+      if (action === 'pause') {
+        if (activeMediaRecorder && activeMediaRecorder.state === 'recording') {
+          activeMediaRecorder.pause();
+          isPaused = true;
+          window.floatingCam?.updateRecordingBar?.({ state: 'paused' });
+        }
+      } else if (action === 'resume') {
+        if (activeMediaRecorder && activeMediaRecorder.state === 'paused') {
+          activeMediaRecorder.resume();
+          isPaused = false;
+          window.floatingCam?.updateRecordingBar?.({ state: 'recording' });
+        }
+      } else if (action === 'finish') {
+        finishRecording();
+      } else if (action === 'cancel') {
+        discardRecording();
+      }
+    });
+
+    function finishRecording() {
+      if (recordingTimer) clearInterval(recordingTimer);
+      window.floatingCam?.closeRecordingBar?.();
+
+      if (activeMediaRecorder && activeMediaRecorder.state !== 'inactive') {
+        activeMediaRecorder.stop();
+      }
+
+      // Stop all media tracks
+      if (activeStream) {
+        activeStream.getTracks().forEach(t => t.stop());
+        activeStream = null;
+      }
+
+      // Restore camera bubble if it was hidden
+      if (currentMode === 'screen-only') {
+        window.floatingCam?.showWindow?.();
+      }
+
+      // Re-show Preferences window with preview modal
+      window.floatingCam?.showPreferences?.();
+    }
+
+    function discardRecording() {
+      if (recordingTimer) clearInterval(recordingTimer);
+      window.floatingCam?.closeRecordingBar?.();
+
+      if (activeMediaRecorder && activeMediaRecorder.state !== 'inactive') {
+        activeMediaRecorder.stop();
+      }
+
+      if (activeStream) {
+        activeStream.getTracks().forEach(t => t.stop());
+        activeStream = null;
+      }
+
+      recordedChunks = [];
+      if (currentMode === 'screen-only') {
+        window.floatingCam?.showWindow?.();
+      }
+      window.floatingCam?.showPreferences?.();
+    }
+
+    // Finalize recording blob & show modal
+    function finalizeRecording(mimeType) {
+      if (recordedChunks.length === 0) return;
+
+      lastRecordedBlob = new Blob(recordedChunks, { type: mimeType });
+      const videoUrl = URL.createObjectURL(lastRecordedBlob);
+
+      if (previewVideoPlayer) previewVideoPlayer.src = videoUrl;
+      if (previewDuration)
+        previewDuration.textContent = `⏱️ Duration: ${formatTime(recordingSeconds)}`;
+      if (previewSize)
+        previewSize.textContent = `📦 Size: ${(lastRecordedBlob.size / (1024 * 1024)).toFixed(1)} MB`;
+      if (previewFormat)
+        previewFormat.textContent = `🎬 Format: ${mimeType.includes('vp9') ? 'WebM (VP9)' : 'WebM'}`;
+
+      // Reset save buttons
+      if (saveRecordingBtn) {
+        saveRecordingBtn.innerHTML = `
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+          Save Recording
+        `;
+        saveRecordingBtn.disabled = false;
+      }
+      if (revealFileBtn) revealFileBtn.style.display = 'none';
+
+      previewModal?.classList.add('show');
+    }
+
+    // Modal Actions
+    saveRecordingBtn?.addEventListener('click', async () => {
+      if (!lastRecordedBlob) return;
+
+      saveRecordingBtn.disabled = true;
+      saveRecordingBtn.innerHTML = 'Saving...';
+
+      try {
+        const arrayBuffer = await lastRecordedBlob.arrayBuffer();
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const defaultName = `Floaty_Recording_${timestamp}.webm`;
+
+        const result = await window.floatingCam?.saveRecording?.(
+          new Uint8Array(arrayBuffer),
+          defaultName
+        );
+
+        if (result && result.success && result.filePath) {
+          savedRecordingPath = result.filePath;
+          saveRecordingBtn.innerHTML = '✓ Saved Successfully!';
+          if (revealFileBtn) revealFileBtn.style.display = 'inline-flex';
+        } else {
+          saveRecordingBtn.disabled = false;
+          saveRecordingBtn.innerHTML = 'Save Recording';
+        }
+      } catch (err) {
+        console.error('Error saving recording:', err);
+        saveRecordingBtn.disabled = false;
+        saveRecordingBtn.innerHTML = 'Save Recording';
+        alert(`Save failed: ${err.message || err}`);
+      }
+    });
+
+    revealFileBtn?.addEventListener('click', () => {
+      if (savedRecordingPath) {
+        window.floatingCam?.showInFolder?.(savedRecordingPath);
+      }
+    });
+
+    discardRecordingBtn?.addEventListener('click', () => {
+      closePreviewModal();
+    });
+
+    closePreviewBtn?.addEventListener('click', () => {
+      closePreviewModal();
+    });
+
+    function closePreviewModal() {
+      previewModal?.classList.remove('show');
+      if (previewVideoPlayer) {
+        previewVideoPlayer.pause();
+        previewVideoPlayer.src = '';
+      }
+      lastRecordedBlob = null;
+    }
+
+    // Initial loads
+    await loadSources();
+    await loadAudioDevices();
+  }
+
   // Initial runs
   await loadCameras();
   await syncCurrentSizeInputs();
   await syncCurrentShape();
   await initAlwaysOnTop();
+  await initRecordingStudio();
 });

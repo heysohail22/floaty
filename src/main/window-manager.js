@@ -41,6 +41,7 @@ class WindowManager {
   constructor() {
     this.window = null;
     this.preferencesWindow = null;
+    this.recordingBarWindow = null;
     this.isQuitting = false;
     this.isCircle = false;
     this.radius = 16;
@@ -263,10 +264,10 @@ class WindowManager {
 
     this.preferencesWindow = new BrowserWindow({
       icon: appIcon || iconPath,
-      width: 500,
-      height: 560,
-      minWidth: 440,
-      minHeight: 480,
+      width: 580,
+      height: 680,
+      minWidth: 500,
+      minHeight: 560,
       title: 'Floaty Settings',
       backgroundColor: '#0c0d12',
       autoHideMenuBar: true,
@@ -287,7 +288,66 @@ class WindowManager {
     return this.preferencesWindow;
   }
 
+  openRecordingBarWindow() {
+    if (this.recordingBarWindow && !this.recordingBarWindow.isDestroyed()) {
+      this.recordingBarWindow.show();
+      return this.recordingBarWindow;
+    }
+
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+    const barWidth = 320;
+    const barHeight = 64;
+
+    this.recordingBarWindow = new BrowserWindow({
+      width: barWidth,
+      height: barHeight,
+      x: Math.round((screenWidth - barWidth) / 2),
+      y: screenHeight - barHeight - 48,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      resizable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      webPreferences: {
+        preload: path.join(__dirname, '../preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
+      }
+    });
+
+    if (process.platform === 'darwin') {
+      this.recordingBarWindow.setAlwaysOnTop(true, 'screen-saver');
+      this.recordingBarWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } else {
+      this.recordingBarWindow.setAlwaysOnTop(true);
+      this.recordingBarWindow.setVisibleOnAllWorkspaces(true);
+    }
+
+    this.recordingBarWindow.loadFile(path.join(__dirname, '../renderer/recording-bar.html'));
+
+    this.recordingBarWindow.on('closed', () => {
+      this.recordingBarWindow = null;
+    });
+
+    return this.recordingBarWindow;
+  }
+
+  closeRecordingBarWindow() {
+    if (this.recordingBarWindow && !this.recordingBarWindow.isDestroyed()) {
+      this.recordingBarWindow.close();
+      this.recordingBarWindow = null;
+    }
+  }
+
   destroy() {
+    if (this.recordingBarWindow && !this.recordingBarWindow.isDestroyed()) {
+      this.recordingBarWindow.destroy();
+      this.recordingBarWindow = null;
+    }
     if (this.preferencesWindow && !this.preferencesWindow.isDestroyed()) {
       this.preferencesWindow.destroy();
       this.preferencesWindow = null;

@@ -1,4 +1,6 @@
-const { ipcMain } = require('electron');
+const { ipcMain, desktopCapturer, dialog, shell, app } = require('electron');
+const fs = require('fs');
+const path = require('path');
 
 class IPCHandlers {
   constructor(windowManager) {
@@ -102,6 +104,27 @@ class IPCHandlers {
       return true;
     });
 
+    ipcMain.handle('hide-preferences', () => {
+      if (
+        this.windowManager.preferencesWindow &&
+        !this.windowManager.preferencesWindow.isDestroyed()
+      ) {
+        this.windowManager.preferencesWindow.hide();
+      }
+      return true;
+    });
+
+    ipcMain.handle('show-preferences', () => {
+      if (
+        this.windowManager.preferencesWindow &&
+        !this.windowManager.preferencesWindow.isDestroyed()
+      ) {
+        this.windowManager.preferencesWindow.show();
+        this.windowManager.preferencesWindow.focus();
+      }
+      return true;
+    });
+
     ipcMain.handle('sync-setting', (event, { key, value }) => {
       if (key === 'radius') {
         const rad = Number(value);
@@ -151,6 +174,99 @@ class IPCHandlers {
       // This will be handled by the renderer's navigator.mediaDevices
       // But we can provide a fallback or additional device info here
       return [];
+    });
+
+    // Screen & Application capture sources
+    ipcMain.handle('get-desktop-sources', async () => {
+      try {
+        const sources = await desktopCapturer.getSources({
+          types: ['screen', 'window'],
+          thumbnailSize: { width: 360, height: 200 },
+          fetchWindowIcons: true
+        });
+
+        return sources.map(source => ({
+          id: source.id,
+          name: source.name,
+          display_id: source.display_id,
+          isScreen: source.id.startsWith('screen:'),
+          thumbnail: source.thumbnail ? source.thumbnail.toDataURL() : null,
+          appIcon: source.appIcon ? source.appIcon.toDataURL() : null
+        }));
+      } catch (err) {
+        console.error('Failed to get desktop sources:', err);
+        return [];
+      }
+    });
+
+    // Save recording to file
+    ipcMain.handle('save-recording', async (event, { buffer, defaultName }) => {
+      try {
+        const defaultDir = app.getPath('videos') || app.getPath('documents') || app.getPath('home');
+        const filename = defaultName || `Floaty_Recording_${Date.now()}.webm`;
+        const defaultPath = path.join(defaultDir, filename);
+
+        const { canceled, filePath } = await dialog.showSaveDialog({
+          title: 'Save Floaty Recording',
+          defaultPath,
+          filters: [
+            { name: 'WebM Video (*.webm)', extensions: ['webm'] },
+            { name: 'MP4 Video (*.mp4)', extensions: ['mp4'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
+        });
+
+        if (canceled || !filePath) {
+          return { success: false, canceled: true };
+        }
+
+        const nodeBuffer = Buffer.from(buffer);
+        fs.writeFileSync(filePath, nodeBuffer);
+        return { success: true, filePath };
+      } catch (err) {
+        console.error('Failed to save recording:', err);
+        return { success: false, error: err.message };
+      }
+    });
+
+    // Reveal item in native file explorer
+    ipcMain.handle('show-item-in-folder', async (event, filePath) => {
+      try {
+        if (filePath && fs.existsSync(filePath)) {
+          shell.showItemInFolder(filePath);
+          return true;
+        }
+      } catch (err) {
+        console.error('Failed to show item in folder:', err);
+      }
+      return false;
+    });
+
+    // Floating Recording Bar Controls
+    ipcMain.handle('open-recording-bar', () => {
+      this.windowManager.openRecordingBarWindow();
+      return true;
+    });
+
+    ipcMain.handle('close-recording-bar', () => {
+      this.windowManager.closeRecordingBarWindow();
+      return true;
+    });
+
+    ipcMain.handle('update-recording-bar', (event, data) => {
+      const bar = this.windowManager.recordingBarWindow;
+      if (bar && !bar.isDestroyed()) {
+        bar.webContents.send('recording-bar-update', data);
+      }
+      return true;
+    });
+
+    ipcMain.handle('send-recording-action', (event, action) => {
+      const pref = this.windowManager.preferencesWindow;
+      if (pref && !pref.isDestroyed()) {
+        pref.webContents.send('recording-action', action);
+      }
+      return true;
     });
   }
 }
